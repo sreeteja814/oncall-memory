@@ -1,0 +1,58 @@
+"""Synthetic-but-realistic incident history (12 months, one team, recurring patterns)."""
+
+INCIDENTS = [
+    dict(id="INC-1042", date="2025-11-03", service="checkout-api", severity="SEV1",
+         symptoms="p99 latency jumped from 180ms to 9s, HTTP 504s from the load balancer, pods healthy.",
+         root_cause="Postgres connection pool exhausted after a deploy raised worker count from 8 to 32 while PgBouncer max_client_conn stayed at 200.",
+         fix="Rolled back the worker count and raised PgBouncer default_pool_size to 60.",
+         failed_attempts="Restarting pods only bought 4 minutes; scaling out replicas made it worse.",
+         resolver="Priya Nair", ttr_minutes=47),
+    dict(id="INC-1057", date="2025-12-12", service="search-indexer", severity="SEV2",
+         symptoms="Elasticsearch bulk requests returning 429 es_rejected_execution_exception, indexing lag over 40 minutes.",
+         root_cause="Reindex job launched at peak hours saturated the write thread pool.",
+         fix="Paused the reindex cron, throttled to 2 parallel bulk workers, moved job to 02:00 UTC.",
+         resolver="Marcus Lee", ttr_minutes=95),
+    dict(id="INC-1071", date="2026-01-20", service="payments-worker", severity="SEV1",
+         symptoms="Stripe webhook queue backing up, consumer memory climbing steadily to OOMKilled every ~20 minutes.",
+         root_cause="Memory leak: an unbounded in-process dict caching idempotency keys with no TTL.",
+         fix="Hotfix added a 15 minute TTL LRU cache; restarted consumers with a raised 2Gi limit as a stopgap.",
+         failed_attempts="Raising memory limit alone only delayed OOMs.",
+         resolver="Priya Nair", ttr_minutes=132),
+    dict(id="INC-1088", date="2026-02-09", service="auth-service", severity="SEV1",
+         symptoms="Users randomly logged out, JWT validation failures, 401 spike starting at 03:00 UTC.",
+         root_cause="Signing key rotation ran but one region's pods cached the old JWKS for 24h.",
+         fix="Force-refreshed the JWKS cache via /admin/jwks/refresh and reduced cache TTL to 5 minutes.",
+         resolver="Dana Ortiz", ttr_minutes=38),
+    dict(id="INC-1103", date="2026-03-02", service="checkout-api", severity="SEV2",
+         symptoms="Intermittent 504s and rising p99 latency after Tuesday release, CPU normal.",
+         root_cause="Same pool exhaustion pattern as INC-1042: a new background job opened its own DB connections outside PgBouncer.",
+         fix="Routed the job through PgBouncer and added a connection-count alert at 80% of pool.",
+         resolver="Priya Nair", ttr_minutes=22),
+    dict(id="INC-1119", date="2026-03-28", service="cdn-edge", severity="SEV3",
+         symptoms="Stale product images served for hours after catalog update.",
+         root_cause="Cache-Control max-age set to 7 days on an asset path missing a versioned filename.",
+         fix="Purged the path and introduced content-hash filenames.",
+         resolver="Marcus Lee", ttr_minutes=60),
+    dict(id="INC-1134", date="2026-04-17", service="kafka-consumer", severity="SEV2",
+         symptoms="Consumer group lag climbing, frequent rebalances every few minutes.",
+         root_cause="max.poll.interval.ms too low for a slow downstream call; consumers kicked from group.",
+         fix="Raised max.poll.interval.ms to 10 minutes and batch size down to 100.",
+         failed_attempts="Adding partitions did not help.",
+         resolver="Dana Ortiz", ttr_minutes=55),
+    dict(id="INC-1150", date="2026-05-30", service="orders-db", severity="SEV1",
+         symptoms="Replica lag over 15 minutes, read-after-write inconsistencies in the order status page.",
+         root_cause="Long-running analytics query held a lock and blocked WAL replay on the replica.",
+         fix="Terminated the query, set statement_timeout=30s on the analytics role, pointed BI to a dedicated replica.",
+         resolver="Marcus Lee", ttr_minutes=41),
+    dict(id="INC-1166", date="2026-07-14", service="payments-worker", severity="SEV2",
+         symptoms="Memory sawtooth again on payments consumers, restarts every 30 minutes.",
+         root_cause="A second unbounded cache, this time on merchant config lookups, same class of bug as INC-1071.",
+         fix="Applied the shared bounded-cache helper; added heap growth alert.",
+         resolver="Priya Nair", ttr_minutes=29),
+]
+
+# The live alert used in the demo: looks like checkout-api pool exhaustion, on a *different* service.
+DEMO_ALERT = (
+    "ALERT invoice-api: p99 latency 7.8s (baseline 200ms), load balancer returning 504s, "
+    "pods Ready, CPU 30%. Started shortly after the 14:05 deploy."
+)
